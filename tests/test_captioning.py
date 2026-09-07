@@ -85,6 +85,17 @@ def test_live_session_requires_permission_and_stops_cleanly():
     assert session.captions == []
 
 
+def test_live_session_exports_timestamped_srt(tmp_path):
+    session = LiveCaptionSession()
+    session.start(True)
+    session.add_result(0.5, 1.5, "Live speech")
+
+    output = session.export_srt(str(tmp_path / "live.srt"))
+
+    assert output.read_text() == "1\n00:00:00,500 --> 00:00:01,500\nLive speech"
+    assert output.stat().st_mode & 0o777 == 0o600
+
+
 def test_live_controller_requires_both_permissions_and_cleans_up():
     # Track Android bridge calls without requiring an Android device.
     calls = []

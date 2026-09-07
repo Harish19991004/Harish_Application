@@ -23,6 +23,7 @@ class LiveCaptionController:
         self.start_overlay = start_overlay
         # Store the overlay-service stop callback.
         self.stop_overlay = stop_overlay
+        self._publish_overlay = lambda _text: None
         # Keep all recognized live caption text in the session object only.
         self.session = LiveCaptionSession()
         # Track whether the Android capture request has been launched.
@@ -53,6 +54,22 @@ class LiveCaptionController:
         self.overlay_running = True
         # Return a status suitable for the application UI.
         return "Live captions are running on this device."
+
+    def publish_caption(self, text: str) -> None:
+        """Publish already-recognized text through the service callback."""
+        self._publish_overlay(text)
+
+    def record_caption(self, start_seconds: float, end_seconds: float, text: str) -> None:
+        """Validate and retain one live result before displaying it."""
+        self.session.add_result(start_seconds, end_seconds, text)
+
+    def set_overlay_publisher(self, publish_overlay: Callable[[str], None]) -> None:
+        self._publish_overlay = publish_overlay
+
+    def live_srt(self) -> str:
+        if not self.session.captions:
+            raise ValueError("No live captions are available to export.")
+        return self.session.engine.to_srt(self.session.captions)
 
     def stop(self) -> None:
         # Stop the Android overlay before clearing caption state.

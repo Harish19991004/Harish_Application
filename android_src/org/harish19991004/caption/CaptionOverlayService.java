@@ -143,10 +143,11 @@ public final class CaptionOverlayService extends Service {
                 int pixelStride = plane.getPixelStride();
                 int rowStride = plane.getRowStride();
                 int rowPadding = rowStride - pixelStride * width;
-                Bitmap bitmap = Bitmap.createBitmap(
+                Bitmap paddedBitmap = Bitmap.createBitmap(
                     width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888);
-                bitmap.copyPixelsFromBuffer(buffer);
-                bitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height);
+                paddedBitmap.copyPixelsFromBuffer(buffer);
+                Bitmap bitmap = Bitmap.createBitmap(paddedBitmap, 0, 0, width, height);
+                if (paddedBitmap != bitmap) paddedBitmap.recycle();
             File output = new File(bufferDirectory(this), "frame.png");
             File temporary = new File(bufferDirectory(this), "frame.png.tmp");
             try (FileOutputStream stream = new FileOutputStream(temporary)) {
@@ -157,8 +158,10 @@ public final class CaptionOverlayService extends Service {
                 bitmap.recycle();
                 return;
             }
-            Bitmap ocrBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
-            runLocalOcr(ocrBitmap);
+            if (!ocrInFlight.get()) {
+                Bitmap ocrBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
+                runLocalOcr(ocrBitmap);
+            }
             bitmap.recycle();
         } catch (Exception ignored) {
             // A transient frame must not stop the foreground capture service.
@@ -207,23 +210,35 @@ public final class CaptionOverlayService extends Service {
         capturing = true;
         audioThread = new Thread(() -> {
             byte[] audio = new byte[16000];
-            audioRecord.startRecording();
-            while (capturing) {
-                int count = audioRecord.read(audio, 0, audio.length);
-                if (count > 0) {
-                    File audioFile = new File(directory, "audio.pcm");
-                    if (audioFile.length() >= MAX_AUDIO_BYTES) {
-                        deleteFile(audioFile);
-                    }
-                    try (FileOutputStream output = new FileOutputStream(audioFile, true)) {
+            File audioFile = new File(directory, "audio.pcm");
+            FileOutputStream output = null;
+            try {
+                audioRecord.startRecording();
+                while (capturing) {
+                    int count = audioRecord.read(audio, 0, audio.length);
+                    if (count > 0) {
+                        if (output == null || audioFile.length() >= MAX_AUDIO_BYTES) {
+                            if (output != null) output.close();
+                            if (audioFile.length() >= MAX_AUDIO_BYTES) deleteFile(audioFile);
+                            output = new FileOutputStream(audioFile, true);
+                        }
                         output.write(audio, 0, count);
-                    } catch (Exception ignored) {
-                        // A transient audio write must not crash the service.
+                        output.flush();
                     }
                 }
+            } catch (Exception ignored) {
+                // A transient audio read or write must not crash the service.
+            } finally {
+                if (output != null) {
+                    try {
+                        output.close();
+                    } catch (Exception ignored) {
+                        // Cleanup is best effort during service shutdown.
+                    }
+                }
+                audioRecord.stop();
+                audioRecord.release();
             }
-            audioRecord.stop();
-            audioRecord.release();
         }, "caption-audio");
         audioThread.start();
     }

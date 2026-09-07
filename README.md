@@ -17,35 +17,38 @@ MediaProjection consent dialog, so another app is never captured silently.
 
 The caption engine is deliberately isolated from capture. There are two workflows:
 
-1. **Uploaded video:** select an MP4, MKV, WebM, or MOV file. An injected speech/OCR
+	1. **Uploaded video:** select an MP4, MKV, WebM, or MOV file. An injected speech/OCR
 	recognizer returns `(start_seconds, end_seconds, text)` segments, and the app writes
-	an SRT beside the source video. To use the included desktop adapter, install
+	an owner-only SRT beside the source video. To use the included desktop adapter, install
 	`requirements-desktop.txt`; the first run downloads the selected Whisper model.
 2. **Live captions:** tap the capture button, approve Android's MediaProjection dialog,
-	then feed recognized frame/audio segments into `LiveCaptionSession`. Captions remain
-	in memory and are cleared when the session stops.
+	then start live processing while the other video app is playing. Final local speech
+	results are timestamped in `LiveCaptionSession` and can be exported to a local SRT
+	file before stopping the session. Captions remain in memory and are cleared when the
+	session stops.
 
-The live mode now requests Android's **Display over other apps** permission and starts a
+The live mode requests Android's **Display over other apps** permission and starts a
 visible foreground overlay service. This is the required Android mechanism for showing
-captions above MX Player or another video app. The current overlay service is the secure
-display/lifecycle foundation. After approving Android capture, tap **Start live processing**;
-the Java service captures frames and playback PCM into private app buffers, and Python polls
-those buffers through the local Tesseract/Vosk adapters before updating the overlay. Tap
-**Stop live captions** to terminate capture and clear transient caption data.
+captions above MX Player or another video app. After approving Android capture, tap
+**Start live processing**; the Java service captures playback PCM into private app buffers,
+and Python polls those buffers through the local Vosk adapter before updating the overlay.
+Tap **Stop live captions** to terminate capture and clear transient caption data.
 
 On Android, ML Kit handles frame OCR inside the foreground service and Vosk handles
 playback PCM through the local Python bridge; desktop Tesseract remains an optional
 fallback for non-Android frame processing.
 
 The Android capture service includes the bundled ML Kit Latin text model for offline
-frame OCR. The repository also includes offline speech/OCR adapters. Install the Python runtimes with
-`requirements-offline.txt`, then place a Vosk model under the app-private `models/`
-directory. The model itself must be downloaded separately because Vosk model archives
-are large binary assets; after placement, recognition runs locally without network
-access. Tesseract also requires its local native `tesseract` binary. The app never
-uploads video, captions, or telemetry. Subtitle output is restricted to local device
-paths; sharing or downloading the SRT outside the device is always separate and user
-controlled.
+frame OCR. The repository also includes offline speech/OCR adapters. The current
+repository does not include a Vosk model binary; a release build must package a vetted
+model under the app-private `models/` directory before spoken live captions can work.
+Do not download the model at runtime in the Android/offline build. Tesseract also
+requires its local native `tesseract` binary. The app never uploads video, captions, or
+telemetry. On Android, live SRT export uses the system document picker
+(`ACTION_CREATE_DOCUMENT`) and writes only to the user-selected URI. A cloud-backed
+document provider may synchronize a file if the user explicitly chooses one. Uploaded
+video input currently uses the desktop/local filesystem workflow; Android SAF input
+import is not yet implemented.
 
 For Android deployment, only `python3`, Kivy, PyJNIus, and the supported Vosk recipe
 are packaged. ML Kit is added as a Gradle dependency for device OCR. Tesseract and
@@ -54,10 +57,10 @@ in the APK.
 
 Vosk speech recognition needs PCM audio supplied by Android playback capture. Android
 requires the `RECORD_AUDIO` runtime permission for this API; the app requests it only
-when live capture starts and uses playback capture, not microphone input. MX Player
-and Android must allow playback capture for the selected content; otherwise the app can
-still use the bundled ML Kit OCR on visible video frames. The app does not request
-microphone input and does not silently record the microphone.
+when live capture starts and uses playback capture, not microphone input. The Android
+build targets API 29 or newer because playback capture is unavailable on older versions.
+The playing app and content must allow playback capture; DRM-protected or capture-disabled
+content will not produce speech captions. The app does not silently record the microphone.
 
 ## Security protocols
 

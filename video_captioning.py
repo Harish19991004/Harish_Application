@@ -42,16 +42,7 @@ class VideoCaptionService:
         # Keep generated subtitles in a normal file and never overwrite the source video.
         if destination.resolve() == source.resolve():
             raise ValueError("Subtitle output must be different from the video input.")
-        # Write subtitles atomically and restrict the file to the current owner.
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=destination.parent, delete=False
-        ) as temporary:
-            temporary.write(self.engine.to_srt(captions))
-            temporary_path = Path(temporary.name)
-        os.chmod(temporary_path, 0o600)
-        os.replace(temporary_path, destination)
-        os.chmod(destination, 0o600)
+        _write_private_srt(destination, self.engine.to_srt(captions))
         # Return the generated subtitle path to the caller.
         return destination
 
@@ -95,3 +86,26 @@ class LiveCaptionSession:
         # Stop accepting new results and release the in-memory session state.
         self.active = False
         self.captions.clear()
+
+    def export_srt(self, output_path: str) -> Path:
+        """Export current live records to a local owner-only SRT file."""
+        destination = Path(output_path).expanduser()
+        parsed = urlparse(output_path)
+        if parsed.scheme or parsed.netloc:
+            raise ValueError("Only local device paths are allowed; network destinations are blocked.")
+        if not self.captions:
+            raise ValueError("No live captions are available to export.")
+        _write_private_srt(destination, self.engine.to_srt(self.captions))
+        return destination
+
+
+def _write_private_srt(destination: Path, content: str) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=destination.parent, delete=False
+    ) as temporary:
+        temporary.write(content)
+        temporary_path = Path(temporary.name)
+    os.chmod(temporary_path, 0o600)
+    os.replace(temporary_path, destination)
+    os.chmod(destination, 0o600)

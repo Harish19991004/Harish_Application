@@ -33,15 +33,18 @@ class CaptionRoot(BoxLayout):
             self.capture_bridge.start_caption_overlay,
             self.capture_bridge.stop_caption_overlay,
         )
+        self.live_controller.set_overlay_publisher(self.capture_bridge.update_caption_overlay)
         # Create the local buffer-to-recognizer pipeline without network services.
         self.capture_pipeline = LocalCapturePipeline(
             self.capture_bridge.capture_buffer_directory(),
             self.capture_bridge.model_directory(),
-            self.capture_bridge.update_caption_overlay,
+            self.live_controller.publish_caption,
+            record_caption=self.live_controller.record_caption,
             enable_frame_ocr=False,
         )
         # Keep the polling event handle so it can be cancelled on stop.
         self.pipeline_event = None
+        self.export_requested = False
         # Configure lazy local Whisper recognition for uploaded videos.
         self.video_service = VideoCaptionService(WhisperRecognizer())
         # Show the current state to the user.
@@ -66,6 +69,9 @@ class CaptionRoot(BoxLayout):
         self.stop_live_button.bind(on_press=self.stop_live_processing)
         # Add the stop action to the layout.
         self.add_widget(self.stop_live_button)
+        self.export_live_button = Button(text="Export live SRT locally")
+        self.export_live_button.bind(on_press=self.export_live_srt)
+        self.add_widget(self.export_live_button)
         # Create a video picker for the offline uploaded-video workflow.
         self.video_picker = FileChooserListView(filters=["*.mp4", "*.mkv", "*.webm", "*.mov"])
         # Add the picker to the layout.
@@ -98,6 +104,9 @@ class CaptionRoot(BoxLayout):
 
     def start_live_processing(self, _button):
         # Start the service and session only after the user approved Android capture.
+        if self.pipeline_event is not None:
+            self.status.text = "Live captions are already running."
+            return
         try:
             self.status.text = self.live_controller.start_after_consent(
                 self.capture_bridge.capture_permission_granted()
@@ -123,6 +132,26 @@ class CaptionRoot(BoxLayout):
         # Stop the service and clear in-memory caption state.
         self.live_controller.stop()
         self.status.text = "Live captions stopped."
+
+    def export_live_srt(self, _button):
+        try:
+            content = self.live_controller.live_srt()
+        except ValueError as error:
+            self.status.text = str(error)
+            return
+        if not self.export_requested:
+            if self.capture_bridge.request_srt_export():
+                self.export_requested = True
+                self.status.text = "Choose a local destination, then press export again."
+                return
+            output = self.live_controller.session.export_srt("live-captions.srt")
+            self.status.text = f"SRT created: {output.name}"
+            return
+        if self.capture_bridge.write_srt_export(content):
+            self.export_requested = False
+            self.status.text = "SRT exported locally."
+        else:
+            self.status.text = "Choose a local destination before exporting."
 
 
 class CaptionApp(App):

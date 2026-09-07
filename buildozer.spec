@@ -13,8 +13,8 @@ source.dir = .
 source.include_exts = py,kv,png,jpg,atlas
 # Application entry point.
 entrypoint = main.py
-# Minimum Android version with MediaProjection support.
-android.minapi = 26
+# Minimum Android version with playback capture support.
+android.minapi = 29
 # Target Android API level.
 android.api = 35
 # Required runtime Python dependencies.
