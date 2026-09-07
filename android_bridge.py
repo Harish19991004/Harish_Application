@@ -73,6 +73,25 @@ class AndroidCaptureBridge:
         projection = autoclass("org.harish19991004.caption.CaptionProjectionActivity")
         return bool(projection.hasCaptureResult())
 
+    def request_srt_export(self) -> bool:
+        try:
+            from jnius import autoclass
+        except ImportError:
+            return False
+        activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        projection = autoclass("org.harish19991004.caption.CaptionProjectionActivity")
+        projection.startExport(activity)
+        return True
+
+    def write_srt_export(self, content: str) -> bool:
+        try:
+            from jnius import autoclass
+        except ImportError:
+            return False
+        activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        projection = autoclass("org.harish19991004.caption.CaptionProjectionActivity")
+        return bool(projection.writeExport(activity, content))
+
     def stop_caption_overlay(self) -> None:
         # Import Android bindings only on Android.
         try:
