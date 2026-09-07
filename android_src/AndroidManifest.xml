@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <application>
+        <activity
+            android:name="org.harish19991004.caption.CaptionProjectionActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:exported="false" />
+        <service
+            android:name="org.harish19991004.caption.CaptionOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+    </application>
+</manifest>

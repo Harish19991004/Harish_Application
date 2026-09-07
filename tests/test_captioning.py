@@ -4,6 +4,7 @@ from captioning import CaptionEngine
 from video_captioning import LiveCaptionSession, VideoCaptionService
 from live_controller import LiveCaptionController
 from recognizers import VoskSpeechRecognizer
+from capture_pipeline import LocalCapturePipeline
 
 
 def test_caption_text_is_normalized():
@@ -114,3 +115,13 @@ def test_vosk_recognizer_requires_a_bundled_local_model(tmp_path):
         assert "Offline Vosk model" in str(error)
     else:
         raise AssertionError("Missing offline models must fail closed")
+
+
+def test_capture_pipeline_ignores_missing_buffers(tmp_path):
+    # Create a pipeline pointed at an empty private capture directory.
+    published = []
+    pipeline = LocalCapturePipeline(str(tmp_path), str(tmp_path / "model"), published.append)
+    # Polling before Android capture starts must be a harmless no-op.
+    pipeline.poll(0.5)
+    # Verify no caption was published without a local frame or audio buffer.
+    assert published == []

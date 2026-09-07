@@ -12,12 +12,14 @@ class AndroidCaptureBridge:
             return False
         # Resolve the current Android activity supplied by Python-for-Android.
         activity = autoclass("org.kivy.android.PythonActivity").mActivity
-        # Resolve the Android media projection manager.
-        media_projection = activity.getSystemService("media_projection")
-        # Create the system consent intent for screen capture.
-        intent = media_projection.createScreenCaptureIntent()
-        # Launch the Android consent dialog; the user must approve it.
-        activity.startActivityForResult(intent, 9001)
+        # Launch the transparent Java activity that owns the consent callback.
+        intent = autoclass("android.content.Intent")(activity, autoclass(
+            "org.harish19991004.caption.CaptionProjectionActivity"
+        ))
+        # Mark this explicit launch as a user-requested capture operation.
+        intent.putExtra("request_capture", True)
+        # Start the permission activity; it starts capture only after approval.
+        activity.startActivity(intent)
         # Report that the request was sent, not that access was granted.
         return True
 
@@ -53,7 +55,7 @@ class AndroidCaptureBridge:
         activity = autoclass("org.kivy.android.PythonActivity").mActivity
         # Resolve the overlay service implemented by the Android build.
         service = autoclass("org.harish19991004.caption.CaptionOverlayService")
-        # Start the visible foreground overlay service.
+        # Start the visible foreground capture and overlay service.
         service.start(activity)
         # Report that the service start request was sent.
         return True
@@ -81,3 +83,26 @@ class AndroidCaptureBridge:
         service = autoclass("org.harish19991004.caption.CaptionOverlayService")
         # Send recognized local text to the visible overlay.
         service.updateCaption(text)
+
+    def capture_buffer_directory(self) -> str:
+        # Return the app-private buffer directory used by the Java service.
+        try:
+            from jnius import autoclass
+        except ImportError:
+            return "capture"
+        # Resolve the current Android activity.
+        activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        # Ask the service for its private cache location.
+        service = autoclass("org.harish19991004.caption.CaptionOverlayService")
+        return str(service.bufferDirectory(activity))
+
+    def model_directory(self) -> str:
+        # Return the app-private location where the user places the Vosk model.
+        try:
+            from jnius import autoclass
+        except ImportError:
+            return "models"
+        # Resolve the current Android activity.
+        activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        # Keep model files in private app storage rather than shared storage.
+        return str(activity.getFilesDir().getAbsolutePath()) + "/models"

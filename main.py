@@ -2,6 +2,7 @@
 # Import the optional Kivy application base when running on a device.
 try:
     from kivy.app import App
+    from kivy.clock import Clock
     from kivy.uix.boxlayout import BoxLayout
     from kivy.uix.button import Button
     from kivy.uix.filechooser import FileChooserListView
@@ -16,6 +17,7 @@ from android_bridge import AndroidCaptureBridge
 from recognizers import WhisperRecognizer
 from video_captioning import VideoCaptionService
 from live_controller import LiveCaptionController
+from capture_pipeline import LocalCapturePipeline
 
 
 class CaptionRoot(BoxLayout):
@@ -35,6 +37,15 @@ class CaptionRoot(BoxLayout):
             self.capture_bridge.start_caption_overlay,
             self.capture_bridge.stop_caption_overlay,
         )
+        # Create the local buffer-to-recognizer pipeline without network services.
+        self.capture_pipeline = LocalCapturePipeline(
+            self.capture_bridge.capture_buffer_directory(),
+            self.capture_bridge.model_directory(),
+            self.capture_bridge.update_caption_overlay,
+            enable_frame_ocr=False,
+        )
+        # Keep the polling event handle so it can be cancelled on stop.
+        self.pipeline_event = None
         # Create the local caption engine.
         self.caption_engine = CaptionEngine()
         # Configure lazy local Whisper recognition for uploaded videos.
@@ -49,6 +60,18 @@ class CaptionRoot(BoxLayout):
         self.capture_button.bind(on_press=self.request_capture)
         # Add the button to the layout.
         self.add_widget(self.capture_button)
+        # Create the explicit start button used after Android consent is approved.
+        self.start_live_button = Button(text="Start live processing")
+        # Connect the start action to local recognizer polling.
+        self.start_live_button.bind(on_press=self.start_live_processing)
+        # Add the start action to the layout.
+        self.add_widget(self.start_live_button)
+        # Create a visible stop action that clears the overlay and buffers.
+        self.stop_live_button = Button(text="Stop live captions")
+        # Connect the stop action to cleanup.
+        self.stop_live_button.bind(on_press=self.stop_live_processing)
+        # Add the stop action to the layout.
+        self.add_widget(self.stop_live_button)
         # Create a video picker for the offline uploaded-video workflow.
         self.video_picker = FileChooserListView(filters=["*.mp4", "*.mkv", "*.webm", "*.mov"])
         # Add the picker to the layout.
@@ -78,6 +101,32 @@ class CaptionRoot(BoxLayout):
             return
         # Show the generated file path to the user.
         self.status.text = f"SRT created: {output.name}"
+
+    def start_live_processing(self, _button):
+        # Start the service and session only after the user approved Android capture.
+        try:
+            self.status.text = self.live_controller.start_after_consent(True)
+        except (PermissionError, RuntimeError) as error:
+            self.status.text = str(error)
+            return
+        # Poll locally captured frame/audio buffers twice per second.
+        self.pipeline_event = Clock.schedule_interval(self.poll_live_buffers, 0.5)
+
+    def poll_live_buffers(self, _interval):
+        # Feed newly captured buffers to offline OCR and speech recognition.
+        try:
+            self.capture_pipeline.poll(0.5)
+        except (FileNotFoundError, RuntimeError) as error:
+            self.status.text = str(error)
+
+    def stop_live_processing(self, _button):
+        # Cancel the Python polling loop before stopping Android capture.
+        if self.pipeline_event is not None:
+            self.pipeline_event.cancel()
+            self.pipeline_event = None
+        # Stop the service and clear in-memory caption state.
+        self.live_controller.stop()
+        self.status.text = "Live captions stopped."
 
 
 class CaptionApp(App):
