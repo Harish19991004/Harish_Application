@@ -63,6 +63,10 @@ public final class CaptionProjectionActivity extends PythonActivity {
         return resultData;
     }
 
+    public static boolean hasCaptureResult() {
+        return resultCode == RESULT_OK && resultData != null;
+    }
+
     public static void clearResult() {
         resultCode = 0;
         resultData = null;

@@ -17,8 +17,26 @@ class SecureSettings:
     def __init__(self, path: str | None = None, secret: bytes | None = None):
         # Keep settings in the app-private directory unless a test path is supplied.
         self.path = Path(path or os.path.expanduser("~/.caption_companion/settings.bin"))
-        # Derive a process-local key when Android Keystore integration is unavailable.
-        self.secret = secret or os.urandom(32)
+        # Keep the fallback key beside the settings file with owner-only permissions.
+        self.secret_path = self.path.with_suffix(".key")
+        self.secret = secret or self._load_or_create_secret()
+
+    def _load_or_create_secret(self) -> bytes:
+        self.secret_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.secret_path.exists():
+            secret = self.secret_path.read_bytes()
+            if len(secret) == 32:
+                return secret
+            return os.urandom(32)
+        secret = os.urandom(32)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        try:
+            descriptor = os.open(self.secret_path, flags, 0o600)
+        except FileExistsError:
+            return self._load_or_create_secret()
+        with os.fdopen(descriptor, "wb") as key_file:
+            key_file.write(secret)
+        return secret
 
     def save_consent(self, granted: bool) -> None:
         # Convert the consent flag to a small byte payload.

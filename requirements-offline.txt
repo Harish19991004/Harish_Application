@@ -1,6 +1,6 @@
 # Local Vosk speech recognition runtime.
-vosk>=0.3.45
+vosk==0.3.45
 # Python wrapper for local Tesseract OCR.
-pytesseract>=0.3.13
+pytesseract==0.3.13
 # Desktop image loader for the optional Python OCR fallback.
-Pillow>=10.0
+Pillow==10.4.0

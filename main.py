@@ -11,8 +11,6 @@ except ImportError:
     App = None
 
 # Import the application services that are safe to use on every platform.
-from captioning import CaptionEngine
-from security import SecureSettings
 from android_bridge import AndroidCaptureBridge
 from recognizers import WhisperRecognizer
 from video_captioning import VideoCaptionService
@@ -26,8 +24,6 @@ class CaptionRoot(BoxLayout):
     def __init__(self, **kwargs):
         # Initialize the vertical layout supplied by Kivy.
         super().__init__(orientation="vertical", padding=24, spacing=16, **kwargs)
-        # Create secure local settings storage.
-        self.settings = SecureSettings()
         # Create the Android permission adapter.
         self.capture_bridge = AndroidCaptureBridge()
         # Coordinate Android consent and the live overlay lifecycle.
@@ -46,8 +42,6 @@ class CaptionRoot(BoxLayout):
         )
         # Keep the polling event handle so it can be cancelled on stop.
         self.pipeline_event = None
-        # Create the local caption engine.
-        self.caption_engine = CaptionEngine()
         # Configure lazy local Whisper recognition for uploaded videos.
         self.video_service = VideoCaptionService(WhisperRecognizer())
         # Show the current state to the user.
@@ -105,7 +99,9 @@ class CaptionRoot(BoxLayout):
     def start_live_processing(self, _button):
         # Start the service and session only after the user approved Android capture.
         try:
-            self.status.text = self.live_controller.start_after_consent(True)
+            self.status.text = self.live_controller.start_after_consent(
+                self.capture_bridge.capture_permission_granted()
+            )
         except (PermissionError, RuntimeError) as error:
             self.status.text = str(error)
             return

@@ -54,6 +54,9 @@ public final class CaptionOverlayService extends Service {
     private static final long MAX_AUDIO_BYTES = 20L * 1024L * 1024L;
 
     public static void start(Context context) {
+        if (!Settings.canDrawOverlays(context) || !CaptionProjectionActivity.hasCaptureResult()) {
+            return;
+        }
         Intent intent = new Intent(context, CaptionOverlayService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent);
@@ -74,7 +77,7 @@ public final class CaptionOverlayService extends Service {
     }
 
     public static String bufferDirectory(Context context) {
-        return new File(context.getCacheDir(), "capture").getAbsolutePath();
+        return new File(context.getFilesDir(), "capture").getAbsolutePath();
     }
 
     @Override
@@ -97,17 +100,29 @@ public final class CaptionOverlayService extends Service {
     private void startCapturePipeline() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
         Intent data = CaptionProjectionActivity.getResultData();
-        if (data == null) return;
+        if (data == null || !CaptionProjectionActivity.hasCaptureResult()) {
+            stopSelf();
+            return;
+        }
         MediaProjectionManager manager = (MediaProjectionManager)
                 getSystemService(MEDIA_PROJECTION_SERVICE);
         projection = manager.getMediaProjection(CaptionProjectionActivity.getResultCode(), data);
+        if (projection == null) {
+            stopSelf();
+            return;
+        }
         File directory = new File(bufferDirectory(this));
+        deleteRecursively(directory);
         directory.mkdirs();
-        deleteFile(new File(directory, "frame.png"));
-        deleteFile(new File(directory, "audio.pcm"));
         captureThread = new HandlerThread("caption-capture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
+        projection.registerCallback(new MediaProjection.Callback() {
+            @Override
+            public void onStop() {
+                stopSelf();
+            }
+        }, captureHandler);
         imageReader = ImageReader.newInstance(720, 1280, android.graphics.PixelFormat.RGBA_8888, 2);
         imageReader.setOnImageAvailableListener(reader -> writeLatestFrame(reader), captureHandler);
         virtualDisplay = projection.createVirtualDisplay("CaptionCompanion",
@@ -133,9 +148,15 @@ public final class CaptionOverlayService extends Service {
                 bitmap.copyPixelsFromBuffer(buffer);
                 bitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height);
             File output = new File(bufferDirectory(this), "frame.png");
-            FileOutputStream stream = new FileOutputStream(output);
-            bitmap.compress(Bitmap.CompressFormat.PNG, 80, stream);
-            stream.close();
+            File temporary = new File(bufferDirectory(this), "frame.png.tmp");
+            try (FileOutputStream stream = new FileOutputStream(temporary)) {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 80, stream);
+            }
+            if (!temporary.renameTo(output)) {
+                deleteFile(temporary);
+                bitmap.recycle();
+                return;
+            }
             Bitmap ocrBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
             runLocalOcr(ocrBitmap);
             bitmap.recycle();
@@ -179,6 +200,10 @@ public final class CaptionOverlayService extends Service {
                 .setAudioPlaybackCaptureConfig(configuration)
                 .setBufferSizeInBytes(32000)
                 .build();
+        if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
+            audioRecord.release();
+            return;
+        }
         capturing = true;
         audioThread = new Thread(() -> {
             byte[] audio = new byte[16000];

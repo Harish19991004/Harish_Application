@@ -1,6 +1,8 @@
 """Uploaded-video caption orchestration with replaceable speech/OCR engines."""
 # Import callable typing for dependency-injected recognition functions.
 from collections.abc import Callable, Iterable
+import os
+import tempfile
 # Import filesystem paths for safe output handling.
 from pathlib import Path
 # Import URL parsing to reject network destinations explicitly.
@@ -40,8 +42,16 @@ class VideoCaptionService:
         # Keep generated subtitles in a normal file and never overwrite the source video.
         if destination.resolve() == source.resolve():
             raise ValueError("Subtitle output must be different from the video input.")
-        # Write standard UTF-8 SRT content.
-        destination.write_text(self.engine.to_srt(captions), encoding="utf-8")
+        # Write subtitles atomically and restrict the file to the current owner.
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=destination.parent, delete=False
+        ) as temporary:
+            temporary.write(self.engine.to_srt(captions))
+            temporary_path = Path(temporary.name)
+        os.chmod(temporary_path, 0o600)
+        os.replace(temporary_path, destination)
+        os.chmod(destination, 0o600)
         # Return the generated subtitle path to the caller.
         return destination
 

@@ -48,6 +48,7 @@ def test_uploaded_video_generates_srt(tmp_path):
     # Verify the generated SRT file and its content.
     assert output == tmp_path / "movie.srt"
     assert "00:00:00,000 --> 00:00:01,500" in output.read_text()
+    assert output.stat().st_mode & 0o777 == 0o600
 
 
 def test_uploaded_video_rejects_network_paths(tmp_path):

@@ -23,3 +23,10 @@ def test_consent_round_trip_and_tamper_rejection(tmp_path: Path):
     settings.path.write_bytes(settings.path.read_bytes()[:-2] + b"xx")
     # Verify corrupted consent fails closed.
     assert settings.load_consent() is False
+
+
+def test_consent_key_survives_a_new_store_instance(tmp_path: Path):
+    path = tmp_path / "settings.bin"
+    SecureSettings(path).save_consent(True)
+    assert SecureSettings(path).load_consent() is True
+    assert (tmp_path / "settings.key").stat().st_mode & 0o777 == 0o600

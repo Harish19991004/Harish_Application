@@ -53,12 +53,25 @@ class AndroidCaptureBridge:
             return False
         # Resolve the current Android activity.
         activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        settings = autoclass("android.provider.Settings")
+        projection = autoclass("org.harish19991004.caption.CaptionProjectionActivity")
+        if not settings.canDrawOverlays(activity) or not projection.hasCaptureResult():
+            return False
         # Resolve the overlay service implemented by the Android build.
         service = autoclass("org.harish19991004.caption.CaptionOverlayService")
         # Start the visible foreground capture and overlay service.
         service.start(activity)
         # Report that the service start request was sent.
         return True
+
+    def capture_permission_granted(self) -> bool:
+        try:
+            from jnius import autoclass
+        except ImportError:
+            return False
+        activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        projection = autoclass("org.harish19991004.caption.CaptionProjectionActivity")
+        return bool(projection.hasCaptureResult())
 
     def stop_caption_overlay(self) -> None:
         # Import Android bindings only on Android.
