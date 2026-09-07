@@ -1,0 +1,4 @@
+# Local Vosk speech recognition runtime.
+vosk>=0.3.45
+# Python wrapper for local Tesseract OCR.
+pytesseract>=0.3.13
